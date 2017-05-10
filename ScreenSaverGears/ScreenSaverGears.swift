@@ -19,6 +19,9 @@ struct CogData {
     var angleStart      = 0.0
     var spokeCount      = 5
     var alpha           = 1.0
+    var color           = NSColor.white
+    var previousIndex   = 0
+    
     
     init(centreX : Double, centreY: Double, radius: Double, toothCount: Int, spokeCount: Int)
     {
@@ -29,13 +32,43 @@ struct CogData {
         self.spokeCount = spokeCount
     }
     
-    init(radius: Double, toothIndex: Int, toothCount: Int, spokeCount: Int)
+    init(radius: Double, toothIndex: Int, toothCount: Int, spokeCount: Int, previousIndex: Int)
     {
         // toothIndex on previous cog
-        self.radius     = radius
-        self.toothIndex = toothIndex
-        self.toothCount = toothCount
-        self.spokeCount = spokeCount
+        self.radius         = radius
+        self.toothIndex     = toothIndex
+        self.toothCount     = toothCount
+        self.spokeCount     = spokeCount
+        self.previousIndex  = previousIndex
+        
+        // initialise color
+        switch arc4random_uniform(11) {
+        case 0:
+            self.color = NSColor.blue
+        case 1:
+            self.color = NSColor.brown
+        case 2:
+            self.color = NSColor.cyan
+        case 3:
+            self.color = NSColor.green
+        case 4:
+            self.color = NSColor.magenta
+        case 5:
+            self.color = NSColor.orange
+        case 6:
+            self.color = NSColor.purple
+        case 7:
+            self.color = NSColor.red
+        case 8:
+            self.color = NSColor.orange
+        case 9:
+            self.color = NSColor.yellow
+        case 10:
+            self.color = NSColor.white
+        default:
+            break
+        }
+        
     }
     
     init(centreX: Double, centreY: Double, toothCount: Int, spokeCount: Int)
@@ -44,6 +77,7 @@ struct CogData {
         self.centreY    = centreY
         self.toothCount = toothCount
         self.spokeCount = spokeCount
+        
     }
 }
 
@@ -59,13 +93,12 @@ class ScreenSaverGears: ScreenSaverView
     
     var countdownTimerMax   = 5
     var countdownTimer      = 5
-    
+    var indexPrevious       = 0
+
     var alphaDelta          = 0.005
     
     var angleCos: [Double] = []
     var angleSin: [Double] = []
-    
-
     
     override init?(frame: NSRect, isPreview: Bool)
     {
@@ -80,7 +113,7 @@ class ScreenSaverGears: ScreenSaverView
         {
             addGear()
         }
-        initialiseCogs()
+        
     }
     
     required init?(coder: NSCoder)
@@ -116,7 +149,7 @@ class ScreenSaverGears: ScreenSaverView
         if cogs.count == 0
         {
             // add the first one
-            let radius          = Double(arc4random_uniform(100) + 30)
+            let radius          = Double(arc4random_uniform(10) + 30)
             let widthAvailable  = Double(self.frame.width) - 2.0 * radius * 1.3
             let heightAvailable = Double(self.frame.height) - 2.0 * radius * 1.3
             
@@ -129,7 +162,11 @@ class ScreenSaverGears: ScreenSaverView
         }
         else
         {
-            let cogPrevious = cogs[cogs.count - 1]
+            if indexPrevious > cogs.count - 1
+            {
+                indexPrevious = cogs.count - 1
+            }
+            let cogPrevious = cogs[indexPrevious]
             
             let radius      = cogPrevious.radius * (1.0 + (20 - Double(arc4random_uniform(40))) / 100.0) // +/- 20%
             
@@ -146,9 +183,8 @@ class ScreenSaverGears: ScreenSaverView
             let toothIndex  = Int(arc4random_uniform(UInt32(cogPrevious.toothCount)))
             
             // check for valid position by moving round toothIndex
-            cogs.append(CogData(radius: radius, toothIndex: toothIndex, toothCount: toothCount, spokeCount: spokeCount))
-            
-            initialiseCog(cogs.count - 1)
+            cogs.append(CogData(radius: radius, toothIndex: toothIndex, toothCount: toothCount, spokeCount: spokeCount, previousIndex: indexPrevious))
+            initialiseLastCog()
             
             var toothIndexOffset = 0
             while !validCog(cogs.last!) && (toothIndexOffset < cogPrevious.toothCount - 1) && cogs[cogs.count - 1].radius > 30
@@ -162,30 +198,23 @@ class ScreenSaverGears: ScreenSaverView
                 }
                 cogs[cogs.count - 1].toothIndex = (cogs[cogs.count - 1].toothIndex + 1) % cogPrevious.toothCount
                 
-                initialiseCog(cogs.count - 1)
+                initialiseLastCog()
                 
             }
             
             if !validCog(cogs[cogs.count - 1])
             {
                 cogs.removeLast()
+                // this means we couldn't continue with this thread - try another next time
+                indexPrevious = Int(arc4random_uniform(UInt32(cogs.count - 1)))
+            }
+            else
+            {
+                indexPrevious = cogs.count - 1
             }
             
-            /**
-             if cogs.count > 50
-             {
-             cogs.remove(at: 0)
-             }
-             **/
-            /**
-             if cogs.count == 0
-             {
-             addGear()
-             NSLog("Back to zero, start again")
-             }
-             initialiseCogs()
-             **/
             countdownTimer = countdownTimerMax
+            
             
         }
     }
@@ -200,10 +229,10 @@ class ScreenSaverGears: ScreenSaverView
             return false
         }
         
-        if cog.radius < cogs[cogs.count - 1].radius * 0.8 {
+        if cog.radius < cogs[indexPrevious].radius * 0.8 {
             return false
         }
-        if cog.radius > cogs[cogs.count - 1].radius * 1.2 {
+        if cog.radius > cogs[indexPrevious].radius * 1.2 {
             return false
         }
         
@@ -222,16 +251,19 @@ class ScreenSaverGears: ScreenSaverView
         }
         
         // check for overlap with any other cog (ignoring previous)
-        for index in 0..<cogs.count - 2
+        for index in 0..<cogs.count - 1
         {
-            let xDelta = cogs[index].centreX - cog.centreX
-            let yDelta = cogs[index].centreY - cog.centreY
-            
-            let spacing = sqrt(pow(xDelta, 2) + pow(yDelta, 2))
-            
-            if spacing < 1.5 * (cog.radius + cogs[index].radius)
+            if index != indexPrevious
             {
-                return false
+                let xDelta = cogs[index].centreX - cog.centreX
+                let yDelta = cogs[index].centreY - cog.centreY
+                
+                let spacing = sqrt(pow(xDelta, 2) + pow(yDelta, 2))
+                
+                if spacing < 1.5 * (cog.radius + cogs[index].radius)
+                {
+                    return false
+                }
             }
             
         }
@@ -247,48 +279,27 @@ class ScreenSaverGears: ScreenSaverView
         }
     }
     
-    func initialiseGears()
+    func initialiseLastCog()
     {
-        // we don't need to do this if it is already defined
-        if cogs.count > 0 {
+        // only ever need to initialise the LAST cog
+        let index = cogs.count - 1
+        if index < 0
+        {
             return
         }
-        
-        cogs.append(CogData(centreX : 75.0, centreY: 95.0, radius: 50.0, toothCount: 15, spokeCount: 7))
-        cogs.append(CogData(radius: 25.0, toothIndex: 14, toothCount: 9, spokeCount: 4))
-        cogs.append(CogData(radius: 30.0, toothIndex: 1, toothCount: 12, spokeCount: 5))
-        cogs.append(CogData(radius: 22.0, toothIndex: 2, toothCount: 13, spokeCount: 3))
-        cogs.append(CogData(radius: 35.0, toothIndex: 5, toothCount: 15, spokeCount: 4))
-        cogs.append(CogData(radius: 50.0, toothIndex: 7, toothCount: 15, spokeCount: 6))
-    }
-    
-    func initialiseCog(_ index: Int)
-    {
-        if index == 0 {
-            return
-        }
-        
+        let indexPrevious = cogs[index].previousIndex
         // set the turn ratio
-        cogs[index].ratio = -cogs[index - 1].ratio * (Double(cogs[index - 1].toothCount) / Double(cogs[index].toothCount))
+        cogs[index].ratio = -cogs[indexPrevious].ratio * (Double(cogs[indexPrevious].toothCount) / Double(cogs[index].toothCount))
         
         // set the centre
-        let r = (cogs[index - 1].radius + cogs[index].radius) * 1.25
-        let angleStepPrevious = 360.0 / Double(cogs[index - 1].toothCount)
+        let r = (cogs[indexPrevious].radius + cogs[index].radius) * 1.25
+        let angleStepPrevious = 360.0 / Double(cogs[indexPrevious].toothCount)
         let angle = Double(cogs[index].toothIndex) * angleStepPrevious
         
-        cogs[index].centreX = r * cosAngle(angle) + cogs[index - 1].centreX
-        cogs[index].centreY = r * sinAngle(angle) + cogs[index - 1].centreY
+        cogs[index].centreX = r * cosAngle(angle) + cogs[indexPrevious].centreX
+        cogs[index].centreY = r * sinAngle(angle) + cogs[indexPrevious].centreY
         
-        cogs[index].angleStart = angle - 180.0 - Double(180 / cogs[index].toothCount) - cogs[index - 1].angleStart.truncatingRemainder(dividingBy: angleStepPrevious)
-    }
-    
-    func initialiseCogs()
-    {
-        // assumes each cog is engaged in turn - so +ve / -ve / +ve, etc.,
-        for index in 0..<cogs.count {
-            initialiseCog(index)
-        }
-        
+        cogs[index].angleStart = angle - 180.0 - Double(180 / cogs[index].toothCount) - cogs[indexPrevious].angleStart.truncatingRemainder(dividingBy: angleStepPrevious)
     }
     
     func removeExpiredCogs()
@@ -300,7 +311,7 @@ class ScreenSaverGears: ScreenSaverView
         if cogs.count == 0
         {
             addGear()
-            initialiseCogs()
+            initialiseLastCog()
         }
         
     }
@@ -311,22 +322,21 @@ class ScreenSaverGears: ScreenSaverView
         if countdownTimer == 0
         {
             addGear()
-            initialiseCogs()
         }
         
         removeExpiredCogs()
         
         angleMain += angleStep
-        // if angleMain > 360 {
-        //     angleMain -= 360
-        // }
         let context: CGContext = NSGraphicsContext.current()!.cgContext;
+        
+        context.setFillColor(NSColor.black.cgColor)
+        context.fill(CGRect(x: 0.0, y: 0.0, width: screenWidth, height: screenHeight))
+
         
         for (index, cog) in self.cogs.enumerated() {
             
             cogs[index].alpha -= alphaDelta
-            
-            context.setStrokeColor(NSColor.black.withAlphaComponent(CGFloat(cog.alpha)).cgColor)
+            context.setStrokeColor(cog.color.withAlphaComponent(CGFloat(cog.alpha)).cgColor)
             context.setLineWidth(2.0)
             
             let toothSpaceAngle = 360.0 / Double(cog.toothCount)
@@ -380,7 +390,7 @@ class ScreenSaverGears: ScreenSaverView
             context.strokePath()
             
             // draw spokes
-            context.setStrokeColor(NSColor.gray.withAlphaComponent(CGFloat(cog.alpha)).cgColor)
+            //context.setStrokeColor(NSColor.gray.withAlphaComponent(CGFloat(cog.alpha)).cgColor)
             context.setLineWidth(1.0)
             
             // inner circle
